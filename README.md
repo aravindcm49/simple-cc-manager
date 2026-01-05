@@ -49,13 +49,30 @@ cp apikeys.json.sample apikeys.json
 
 ## Usage
 
+### Normal Mode (auto-launches Claude)
 ```bash
 cc dflt            # Switch to Anthropic and run claude
-cc dflt --no-run   # Switch to Anthropic without running
-cc glm --no-run    # Switch to GLM without running
+cc glm             # Switch to GLM and run claude
 cc mmx             # Switch to MiniMax and run claude
-cc clr             # Clear all ANTHROPIC_* variables
+cc chk             # Check current provider status
 ```
+
+### With Claude Flags
+```bash
+cc dflt -c                    # Switch to Anthropic, run with --continue
+cc glm -r session-123         # Switch to GLM, resume specific session
+cc mmx --continue             # Switch to MiniMax, continue conversation
+```
+
+### Manual Mode (set variables without launching)
+```bash
+# IMPORTANT: When using --no-run or clr, you must SOURCE the script
+source cc glm --no-run        # Set GLM variables in current shell
+source cc clr                 # Clear variables from current shell
+. cc dflt --no-run            # Alternative syntax (same as source)
+```
+
+After setting variables with `source`, you can then run `claude` manually and it will pick up the provider configuration.
 
 ## Available Providers
 
@@ -65,11 +82,28 @@ cc clr             # Clear all ANTHROPIC_* variables
 | `glm` | GLM (Z.ai) | https://api.z.ai/api/anthropic |
 | `mmx` | MiniMax | https://api.minimax.io/anthropic |
 
-## Notes
+## Important Notes
 
+### How Environment Variables Work
+- **Normal commands** (`cc dflt`, `cc glm`, etc.) run in a subshell and auto-launch `claude` within that subshell, so everything works.
+- **Manual mode** (`--no-run`) and **clear command** (`clr`) need to affect your current shell, so you must `source` them.
+- **Check command** (`chk`) only reads variables and works fine either way.
+
+### When to Use Source
+```bash
+# Use source when you want to set/clear variables but NOT launch claude
+source cc glm --no-run   # Set vars, then run 'claude' manually
+source cc clr            # Clear vars from your shell
+
+# No source needed when auto-launching claude
+cc glm                   # This works fine
+cc dflt -c               # This works fine
+```
+
+### Behavior
 - When using `cc <provider>` without `--no-run`, the tool will display the switched variables, wait 500ms, clear the screen, and automatically launch Claude Code
-- When using `--no-run`, variables are set but Claude Code is not launched (use `claude` command manually)
-- The `clr` command clears all ANTHROPIC_* variables without launching anything
+- When using `source cc <provider> --no-run`, variables persist in your current shell for manual `claude` invocation
+- The `chk` command shows which provider is currently active based on `ANTHROPIC_BASE_URL`
 
 ## License
 

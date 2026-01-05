@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd)"
 API_KEYS_FILE="$SCRIPT_DIR/apikeys.json"
 
 UNSET_VARS=(
@@ -81,8 +81,9 @@ print_vars() {
 }
 
 run_claude() {
+    local flags="${1:-}"
     if command -v claude &>/dev/null; then
-        claude
+        eval "claude $flags"
     else
         echo "Run 'claude' to start Claude Code."
     fi
@@ -90,6 +91,7 @@ run_claude() {
 
 provider_glm() {
     local no_run="${1:-}"
+    local claude_flags="${2:-}"
     clear_vars
     local api_key
     api_key=$(load_api_key "glm")
@@ -97,10 +99,10 @@ provider_glm() {
     set_glm_vars
     echo "✓ Switched to GLM"
     print_vars
-    if [ "$no_run" != "--no-run" ]; then
+    if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
         sleep 0.5
         clear
-        run_claude
+        run_claude "$claude_flags"
     else
         echo "Variables set without running claude (use 'claude' to launch)"
     fi
@@ -108,6 +110,7 @@ provider_glm() {
 
 provider_mmx() {
     local no_run="${1:-}"
+    local claude_flags="${2:-}"
     clear_vars
     local api_key
     api_key=$(load_api_key "minimax")
@@ -115,10 +118,10 @@ provider_mmx() {
     set_mmx_vars
     echo "✓ Switched to MiniMax"
     print_vars
-    if [ "$no_run" != "--no-run" ]; then
+    if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
         sleep 0.5
         clear
-        run_claude
+        run_claude "$claude_flags"
     else
         echo "Variables set without running claude (use 'claude' to launch)"
     fi
@@ -126,6 +129,7 @@ provider_mmx() {
 
 provider_dflt() {
     local no_run="${1:-}"
+    local claude_flags="${2:-}"
     clear_vars
     local api_key
     api_key=$(load_api_key "anthropic")
@@ -133,10 +137,10 @@ provider_dflt() {
     set_dflt_vars
     echo "✓ Switched to Anthropic (default)"
     print_vars
-    if [ "$no_run" != "--no-run" ]; then
+    if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
         sleep 0.5
         clear
-        run_claude
+        run_claude "$claude_flags"
     else
         echo "Variables set without running claude (use 'claude' to launch)"
     fi
@@ -147,24 +151,58 @@ provider_clr() {
     echo "✓ Cleared all provider variables"
 }
 
+provider_chk() {
+    # Check if ANTHROPIC_BASE_URL is set
+    if [ -z "${ANTHROPIC_BASE_URL:-}" ]; then
+        echo "No provider active"
+        return
+    fi
+
+    # Detect provider based on BASE_URL
+    case "$ANTHROPIC_BASE_URL" in
+        "https://api.anthropic.com")
+            echo "Active Provider: Anthropic (default)"
+            ;;
+        "https://api.z.ai/api/anthropic")
+            echo "Active Provider: GLM (Z.ai)"
+            ;;
+        "https://api.minimax.io/anthropic")
+            echo "Active Provider: MiniMax"
+            ;;
+        *)
+            echo "Active Provider: Unknown (custom BASE_URL)"
+            ;;
+    esac
+
+    # Show relevant environment variables
+    print_vars
+}
+
 usage() {
-    echo "Usage: cc <command> [--no-run]"
+    echo "Usage: cc <command> [options] [claude-flags]"
     echo ""
     echo "Commands:"
     echo "  dflt    - Switch to Anthropic (default) provider"
     echo "  glm     - Switch to GLM provider"
     echo "  mmx     - Switch to MiniMax provider"
     echo "  clr     - Clear all provider variables"
+    echo "  chk     - Check current provider status"
     echo ""
     echo "Options:"
-    echo "  --no-run - Don't launch claude after switching"
+    echo "  -nr, --no-run - Don't launch claude after switching"
+    echo ""
+    echo "Claude Flags (passed to claude command):"
+    echo "  -c, --continue      Continue the most recent conversation"
+    echo "  -r, --resume [val]  Resume a conversation by session ID"
     echo ""
     echo "Examples:"
-    echo "  cc dflt        # Switch to Anthropic and run claude"
-    echo "  cc dflt --no-run  # Switch to Anthropic without running"
-    echo "  cc glm --no-run   # Switch to GLM without running"
-    echo "  cc mmx         # Switch to MiniMax and run claude"
-    echo "  cc clr         # Clear all ANTHROPIC_* variables"
+    echo "  cc dflt              # Switch to Anthropic and run claude"
+    echo "  cc dflt -c           # Switch to Anthropic, run with --continue"
+    echo "  cc glm -r session-123 # Switch to GLM, resume specific session"
+    echo "  cc dflt --no-run     # Switch to Anthropic without running"
+    echo "  cc mmx               # Switch to MiniMax and run claude"
+    echo "  cc clr               # Clear all ANTHROPIC_* variables"
+    echo "  cc chk               # Check current provider status"
 }
 
 main() {
@@ -174,15 +212,39 @@ main() {
     fi
 
     local cmd="$1"
+    shift
     local no_run=""
+    local claude_flags=""
 
-    if [ $# -ge 2 ] && [ "$2" = "--no-run" ]; then
-        no_run="--no-run"
-    fi
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -nr|--no-run)
+                no_run="$1"
+                shift
+                break  # Stop parsing, ignore everything after --no-run
+                ;;
+            -c|--continue|-r|--resume)
+                claude_flags="$claude_flags $1"
+                shift
+                # Handle -r and --resume with optional value
+                if [[ "$1" != -* && $# -gt 0 ]]; then
+                    claude_flags="$claude_flags $1"
+                    shift
+                fi
+                ;;
+            *)
+                claude_flags="$claude_flags $1"
+                shift
+                ;;
+        esac
+    done
+
+    claude_flags="${claude_flags#"${claude_flags%%[![:space:]]*}"}"  # Trim leading space
 
     case "$cmd" in
-        glm|mmx|clr|dflt)
-            "provider_$cmd" "$no_run"
+        glm|mmx|clr|dflt|chk)
+            "provider_$cmd" "$no_run" "$claude_flags"
             ;;
         -h|--help|help)
             usage
