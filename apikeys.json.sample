@@ -1,0 +1,5 @@
+{
+    "anthropic": "your-anthropic-api-key-here",
+    "glm": "your-glm-api-key-here",
+    "minimax": "your-minimax-api-key-here"
+}
