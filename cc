@@ -83,7 +83,13 @@ print_vars() {
 run_claude() {
     local flags="${1:-}"
     if command -v claude &>/dev/null; then
-        eval "claude $flags"
+        if [ -n "$flags" ]; then
+            # Use set -- to safely parse flags into positional parameters
+            eval "set -- $flags"
+            claude "$@"
+        else
+            claude
+        fi
     else
         echo "Run 'claude' to start Claude Code."
     fi
@@ -228,7 +234,7 @@ main() {
                 claude_flags="$claude_flags $1"
                 shift
                 # Handle -r and --resume with optional value
-                if [[ "$1" != -* && $# -gt 0 ]]; then
+                if [[ $# -gt 0 && "$1" != -* ]]; then
                     claude_flags="$claude_flags $1"
                     shift
                 fi
