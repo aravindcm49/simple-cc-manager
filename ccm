@@ -73,6 +73,89 @@ set_dflt_vars() {
     export API_TIMEOUT_MS="3000000"
 }
 
+set_optr_vars() {
+    export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
+    export API_TIMEOUT_MS="3000000"
+}
+
+fetch_optr_models() {
+    local api_key="$1"
+    local response
+    response=$(curl -s "https://openrouter.ai/api/v1/models?supported_parameters=tools" \
+        -H "Authorization: Bearer $api_key") || return 1
+
+    echo "$response" | jq -r '.data[] | "\(.canonical_slug) | \(.name)"' 2>/dev/null || return 1
+}
+
+select_optr_model() {
+    local api_key="$1"
+    local models
+    models=$(fetch_optr_models "$api_key") || {
+        echo "Error: Failed to fetch models from OpenRouter" >&2
+        return 1
+    }
+
+    if [ -z "$models" ]; then
+        echo "Error: No models available from OpenRouter" >&2
+        return 1
+    fi
+
+    local selected
+
+    # Use fzf if available, otherwise fall back to select
+    if command -v fzf &>/dev/null; then
+        selected=$(echo "$models" | fzf --prompt="Select OpenRouter model: " \
+            --height=50% \
+            --layout=reverse \
+            --delimiter="|" \
+            --nth=1,2 \
+            --header="Filter models, press Enter to select, Ctrl+C to cancel" \
+            --preview-window=hidden) || return 1
+        [ -n "$selected" ] && echo "$selected" | cut -d'|' -f1 | xargs
+    else
+        # Fall back to numbered select
+        echo ""
+        echo "Available OpenRouter models (tool-use compatible):"
+        echo "------------------------------------------------"
+        
+        # Create arrays for model slugs and names
+        local model_slugs=()
+        local model_names=()
+        
+        while IFS='|' read -r slug name; do
+            model_slugs+=("$(echo "$slug" | xargs)")
+            model_names+=("$(echo "$name" | xargs)")
+        done <<< "$models"
+        
+        # Display numbered list
+        local i=1
+        for slug in "${model_slugs[@]}"; do
+            local name="${model_names[$((i-1))]}"
+            printf "%3d) %s (%s)\n" "$i" "$name" "$slug"
+            ((i++))
+        done
+        
+        echo ""
+        echo "------------------------------------------------"
+        
+        # Select model
+        local choice
+        while true; do
+            read -p "Select model number (1-${#model_slugs[@]}): " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#model_slugs[@]}" ]; then
+                selected="${model_slugs[$((choice-1))]}"
+                echo ""
+                echo "Selected: ${model_names[$((choice-1))]} ($selected)"
+                break
+            else
+                echo "Invalid selection. Please enter a number between 1 and ${#model_slugs[@]}"
+            fi
+        done
+        
+        echo "$selected"
+    fi
+}
+
 print_vars() {
     echo ""
     echo "Current ANTHROPIC_* variables:"
@@ -152,6 +235,38 @@ provider_dflt() {
     fi
 }
 
+provider_optr() {
+    local model_slug="${1:-}"
+    local no_run="${2:-}"
+    local claude_flags="${3:-}"
+
+    clear_vars
+    local api_key
+    api_key=$(load_api_key "openrouter")
+    export ANTHROPIC_AUTH_TOKEN="$api_key"
+    export ANTHROPIC_API_KEY=""
+
+    local selected_model
+    if [ -n "$model_slug" ]; then
+        selected_model="$model_slug"
+    else
+        selected_model=$(select_optr_model "$api_key") || return 1
+    fi
+
+    export ANTHROPIC_DEFAULT_SONNET_MODEL="$selected_model"
+    set_optr_vars
+    echo "✓ Switched to OpenRouter (model: $selected_model)"
+    print_vars
+
+    if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
+        sleep 0.5
+        clear
+        run_claude "$claude_flags"
+    else
+        echo "Variables set without running claude (use 'claude' to launch)"
+    fi
+}
+
 provider_clr() {
     clear_vars
     echo "✓ Cleared all provider variables"
@@ -175,6 +290,9 @@ provider_chk() {
         "https://api.minimax.io/anthropic")
             echo "Active Provider: MiniMax"
             ;;
+        "https://openrouter.ai/api")
+            echo "Active Provider: OpenRouter"
+            ;;
         *)
             echo "Active Provider: Unknown (custom BASE_URL)"
             ;;
@@ -191,11 +309,13 @@ usage() {
     echo "  dflt    - Switch to Anthropic (default) provider"
     echo "  glm     - Switch to GLM provider"
     echo "  mmx     - Switch to MiniMax provider"
+    echo "  optr    - Switch to OpenRouter provider (interactive model selection)"
     echo "  clr     - Clear all provider variables"
     echo "  chk     - Check current provider status"
     echo ""
     echo "Options:"
     echo "  -nr, --no-run - Don't launch claude after switching"
+    echo "  -m, --model <slug> - Select specific model (for optr command)"
     echo ""
     echo "Claude Flags (passed to claude command):"
     echo "  -c, --continue      Continue the most recent conversation"
@@ -207,6 +327,9 @@ usage() {
     echo "  cc glm -r session-123 # Switch to GLM, resume specific session"
     echo "  cc dflt --no-run     # Switch to Anthropic without running"
     echo "  cc mmx               # Switch to MiniMax and run claude"
+    echo "  cc optr              # Switch to OpenRouter, select model interactively"
+    echo "  cc optr -m anthropic/claude-3.5-sonnet  # Switch to OpenRouter with specific model"
+    echo "  cc optr -m anthropic/claude-3.5-sonnet --no-run  # Select without launching"
     echo "  cc clr               # Clear all ANTHROPIC_* variables"
     echo "  cc chk               # Check current provider status"
 }
@@ -221,6 +344,7 @@ main() {
     shift
     local no_run=""
     local claude_flags=""
+    local model_slug=""
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -229,6 +353,17 @@ main() {
                 no_run="$1"
                 shift
                 break  # Stop parsing, ignore everything after --no-run
+                ;;
+            -m|--model)
+                shift
+                if [[ $# -gt 0 ]]; then
+                    model_slug="$1"
+                    shift
+                else
+                    echo "Error: --model flag requires a value" >&2
+                    usage >&2
+                    exit 1
+                fi
                 ;;
             -c|--continue|-r|--resume)
                 claude_flags="$claude_flags $1"
@@ -252,6 +387,9 @@ main() {
         glm|mmx|clr|dflt|chk)
             "provider_$cmd" "$no_run" "$claude_flags"
             ;;
+        optr)
+            "provider_optr" "$model_slug" "$no_run" "$claude_flags"
+            ;;
         -h|--help|help)
             usage
             ;;
@@ -263,4 +401,7 @@ main() {
     esac
 }
 
-main "$@"
+# Only run main if script is executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

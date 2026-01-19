@@ -4,7 +4,7 @@ A CLI tool to switch between different AI API providers for Claude Code.
 
 ## Features
 
-- Switch between Anthropic (default), GLM, and MiniMax providers
+- Switch between Anthropic (default), GLM, MiniMax, and OpenRouter providers
 - Auto-launch Claude Code after switching
 - Set environment variables easily with one command
 - Support for `--no-run` flag to set variables without launching
@@ -13,7 +13,11 @@ A CLI tool to switch between different AI API providers for Claude Code.
 
 1. Clone or download this repository
 2. Navigate to the repository directory: `cd path/to/ccm`
-3. Make the script executable (if needed): `chmod +x cc`
+ 3. Make the script executable (if needed): `chmod +x cc`
+4. Install `fzf` (required for OpenRouter's interactive model selection):
+   ```bash
+   brew install fzf
+   ```
 
 ### Add to PATH
 
@@ -54,6 +58,8 @@ cp apikeys.json.sample apikeys.json
 cc dflt            # Switch to Anthropic and run claude
 cc glm             # Switch to GLM and run claude
 cc mmx             # Switch to MiniMax and run claude
+cc optr            # Switch to OpenRouter (interactive model selection)
+cc optr -m <model> # Switch to OpenRouter with specific model
 cc chk             # Check current provider status
 ```
 
@@ -81,6 +87,7 @@ After setting variables with `source`, you can then run `claude` manually and it
 | `dflt` | Anthropic (default) | https://api.anthropic.com |
 | `glm` | GLM (Z.ai) | https://api.z.ai/api/anthropic |
 | `mmx` | MiniMax | https://api.minimax.io/anthropic |
+| `optr` | OpenRouter | https://openrouter.ai/api |
 
 ## Important Notes
 
@@ -104,6 +111,11 @@ cc dflt -c               # This works fine
 - When using `cc <provider>` without `--no-run`, the tool will display the switched variables, wait 500ms, clear the screen, and automatically launch Claude Code
 - When using `source cc <provider> --no-run`, variables persist in your current shell for manual `claude` invocation
 - The `chk` command shows which provider is currently active based on `ANTHROPIC_BASE_URL`
+
+### OpenRouter Provider Notes
+- The OpenRouter provider (`optr`) requires tool-use compatible models
+- Model selection is interactive using `fzf` when available, otherwise falls back to numbered list
+- `ANTHROPIC_API_KEY` is explicitly set to empty string to prevent 405 authentication errors
 
 ## License
 
