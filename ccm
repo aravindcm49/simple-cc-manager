@@ -169,9 +169,9 @@ run_claude() {
         if [ -n "$flags" ]; then
             # Use set -- to safely parse flags into positional parameters
             eval "set -- $flags"
-            claude "$@"
+            exec claude "$@"
         else
-            claude
+            exec claude
         fi
     else
         echo "Run 'claude' to start Claude Code."
@@ -189,7 +189,6 @@ provider_glm() {
     echo "✓ Switched to GLM"
     print_vars
     if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
-        sleep 0.5
         clear
         run_claude "$claude_flags"
     else
@@ -208,7 +207,6 @@ provider_mmx() {
     echo "✓ Switched to MiniMax"
     print_vars
     if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
-        sleep 0.5
         clear
         run_claude "$claude_flags"
     else
@@ -227,7 +225,6 @@ provider_dflt() {
     echo "✓ Switched to Anthropic (default)"
     print_vars
     if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
-        sleep 0.5
         clear
         run_claude "$claude_flags"
     else
@@ -259,7 +256,6 @@ provider_optr() {
     print_vars
 
     if [ "$no_run" != "--no-run" ] && [ "$no_run" != "-nr" ]; then
-        sleep 0.5
         clear
         run_claude "$claude_flags"
     else
